@@ -1,5 +1,6 @@
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{explode, split}
+import org.apache.spark.sql.functions.lower
 
 
 object SparkStream {
@@ -14,12 +15,13 @@ object SparkStream {
 
         val df = spark.readStream
           .format("socket")
-          .option("host","10.90.138.32")
-          .option("port","8989")
+          .option("host", "10.90.138.32")
+          .option("port", "8989")
           .load()
 
-        val wordsDF = df.select("value")
-        val query = wordsDF.writeStream
+        val wordsDF = df.select(explode(split(df("value"),"[ !?,.:]")).alias("word"))
+        val words = wordsDF.select(lower(wordsDF("word")))
+        val query = words.writeStream
           .format("console")
           .outputMode("append")
           .option("truncate", "false")
