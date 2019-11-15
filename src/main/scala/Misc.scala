@@ -11,6 +11,14 @@ object Misc {
           .load(path)
     }
 
+    def DF2CSV(path: String, headers: Boolean, df: DataFrame): Unit = {
+        df.write
+          .format("csv")
+          .option("header", headers.toString)
+          .option("mode", "DROPMALFORMED")
+          .save(path)
+    }
+
     def PathExists(path: String): Boolean = {
         HDFS.exists(new Path(path))
     }
