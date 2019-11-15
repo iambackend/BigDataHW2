@@ -159,7 +159,7 @@ object Classifier {
     }
 
     def printResults(modelName: String, results: DataFrame, labels: Array[LabelType]): Unit = {
-        println("\n" + modelName.slice("class org.apache.spark.ml.classification.".length, modelName.length))
+        println("\n" + modelName)
         println(f"accuracy: ${accuracy(results)}%.2f%%")
         labels.foreach { label =>
             println(s"label $label")
@@ -185,7 +185,7 @@ object Classifier {
         // Print results
         Models.foreach(
             //m => m.transform(test).select("rawPrediction", ColPredClass, ColTrueClass).show(false)
-            m => printResults(m.getClass.toString, m.transform(test), labels)
+            m => printResults(m.getClass.getSimpleName, m.transform(test), labels)
         )
     }
 
