@@ -1,7 +1,8 @@
+import java.util.Locale
+
 import org.apache.hadoop.fs.FileSystem
 import org.apache.log4j.{Level, LogManager}
 import org.apache.spark.sql.SparkSession
-
 
 case object Session {
     // Windows dependency
@@ -17,4 +18,6 @@ case object Session {
       .getOrCreate()
     // Get HDFS
     val HDFS: FileSystem = FileSystem.get(Spark.sparkContext.hadoopConfiguration)
+    // Set Locale
+    Locale.setDefault(Locale.US)
 }

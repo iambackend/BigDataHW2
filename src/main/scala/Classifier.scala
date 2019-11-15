@@ -1,108 +1,190 @@
 import Misc.CSV2DF
+import Scores.{FScoreTuple, LabelType, accuracy}
 import Session.Spark
-import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.ml.classification._
-import org.apache.spark.ml.feature.{Word2VecModel, _}
-import org.apache.spark.ml.linalg.DenseVector
+import org.apache.spark.ml.feature._
+import org.apache.spark.ml.{Pipeline, PipelineModel, Transformer}
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.types.DoubleType
 
 
 object Classifier {
-    val ColTransformResult = "result"
+    //region Columns
 
-    //region Classifiers
-
-    private val lr = new LogisticRegression()
-      .setRegParam(0.5)
-    private val svc = new LinearSVC()
-      .setRegParam(0.5)
-    private val rf = new RandomForestClassifier()
-      .setNumTrees(100)
-    //endregion
-    //region Transformations
-
+    private val ColPipeInput = "sentences"
     private val ColTokenizerResult = "words"
     private val ColFilterResult = "filtered"
     private val ColNGrams = "ngrams"
     private val ColVFiltered = "vfiltered"
     private val ColVNGrams = "vngrams"
-    private val ColStrignDF = "sentence"
+    private val ColVNormFiltered = "vnormfiltered"
+    private val ColVNormNGrams = "vnormngrams"
+
+    val ColVectors = "vectors" // do not change!
+    val ColTrueClass = "label" // do not change!
+    val ColPredClass = "prediction" // do not change!
+    //endregion
+    //region Transformations
 
     private val tokenizer = new RegexTokenizer()
+      .setInputCol(ColPipeInput)
       .setOutputCol(ColTokenizerResult)
-      //      .setPattern("(\\w+-\\w+)|\\w+")
+      //.setPattern("(\\w+-\\w+)|\\w+")
       .setPattern("\\w+(-\\w+)?")
       .setGaps(false)
     private val filter = new StopWordsRemover()
       .setInputCol(ColTokenizerResult)
       .setOutputCol(ColFilterResult)
-    private val ngram = new NGram()
+    private val ngrams = new NGram()
       .setN(2)
-      .setInputCol(ColFilterResult)
+      .setInputCol(ColTokenizerResult)
       .setOutputCol(ColNGrams)
-    private val vectorizer = new Word2Vec()
+    private val words2vec = new Word2Vec()
+      .setInputCol(ColFilterResult)
+      .setOutputCol(ColVFiltered)
       .setVectorSize(3)
       .setMinCount(0)
+    private val ngrams2vec = new Word2Vec()
+      .setInputCol(ColNGrams)
+      .setOutputCol(ColVNGrams)
+      .setVectorSize(6)
+      .setMinCount(0)
+    private val vwordsnorm = new MinMaxScaler()
+      .setInputCol(ColVFiltered)
+      .setOutputCol(ColVNormFiltered)
+    private val vngramsnorm = new MinMaxScaler()
+      .setInputCol(ColVNGrams)
+      .setOutputCol(ColVNormNGrams)
     private val assembler = new VectorAssembler()
-      .setInputCols(Array(ColVFiltered, ColVNGrams))
-      .setOutputCol(ColTransformResult)
+      .setInputCols(Array(ColVNormFiltered, ColVNormNGrams))
+      .setOutputCol(ColVectors)
+    private val pipeline = new Pipeline()
+      .setStages(Array(tokenizer, filter, ngrams, words2vec, ngrams2vec, vwordsnorm, vngramsnorm, assembler))
+    private var PipeModel: PipelineModel = _
+    //endregion
+    //region Classifiers
 
-    private var vWordsModel: Word2VecModel = _
-    private var vNgramsModel: Word2VecModel = _
+    private val rf = new RandomForestClassifier()
+      .setLabelCol(ColTrueClass)
+      .setFeaturesCol(ColVectors)
+      .setPredictionCol(ColPredClass)
+      .setNumTrees(200)
+    private val lr = new LogisticRegression()
+      .setLabelCol(ColTrueClass)
+      .setFeaturesCol(ColVectors)
+      .setPredictionCol(ColPredClass)
+    private val ann = new MultilayerPerceptronClassifier()
+      .setLabelCol(ColTrueClass)
+      .setFeaturesCol(ColVectors)
+      .setPredictionCol(ColPredClass)
+      .setLayers(Array(9, 18, 36, 6, 2))
+    private val svc = new LinearSVC()
+      .setLabelCol(ColTrueClass)
+      .setFeaturesCol(ColVectors)
+      .setPredictionCol(ColPredClass)
+      .setRegParam(1.0)
+      .setTol(1E-3)
+    private val nb = new NaiveBayes()
+      .setLabelCol(ColTrueClass)
+      .setFeaturesCol(ColVectors)
+      .setPredictionCol(ColPredClass)
+    private var Models: Array[Transformer] = _
     //endregion
     //region Paths
 
     private val modelFolder = "models/"
-    private val pathVWords = modelFolder + "vWords"
-    private val pathVNgrams = modelFolder + "vNgrams"
-    private val pathLR = modelFolder + "LR"
-    private val pathSVC = modelFolder + "SVC"
+    private val pathPipe = modelFolder + "Pipe"
     private val pathRF = modelFolder + "RF"
+    private val pathLR = modelFolder + "LR"
+    private val pathANN = modelFolder + "ANN"
+    private val pathSVC = modelFolder + "SVC"
+    private val pathNB = modelFolder + "NB"
     //endregion
 
-    private def extractFeatures(df: DataFrame, colInput: String): DataFrame = {
-        tokenizer.setInputCol(colInput)
-        ngram.transform(filter.transform(tokenizer.transform(df)))
+    def TransformDataFrame(df: DataFrame): DataFrame = {
+        PipeModel.transform(df)
     }
 
-    private def features2Vector(df: DataFrame): DataFrame = {
-        val vwords = vWordsModel.transform(df)
-        val vngrams = vNgramsModel.transform(vwords)
-        assembler.transform(vngrams)
-    }
-
-    def transformDataFrame(df: DataFrame, colInput: String): DataFrame = {
-        features2Vector(extractFeatures(df, colInput))
-    }
-
-    def transformString(twit: String): DataFrame = {
+    def TransformString(twit: String): DataFrame = {
         val df = Spark.createDataFrame(Seq(
             Tuple1(twit)
-        )).toDF(ColStrignDF)
-        transformDataFrame(df, ColStrignDF).select(ColTransformResult)
+        )).toDF(ColPipeInput)
+        TransformDataFrame(df).select(ColVectors)
     }
 
-    def init(df: DataFrame, colInput: String): Unit = {
-        val features = extractFeatures(df, colInput)
-        val load = Word2VecModel.load _
-        // Set words2vector
-        vectorizer.setInputCol(ColFilterResult).setOutputCol(ColVFiltered)
-        vWordsModel = Model.FitOrLoad(vectorizer, features, load, pathVWords)
-        // Set ngrams2vector
-        vectorizer.setInputCol(ColNGrams).setOutputCol(ColVNGrams)
-        vNgramsModel = Model.FitOrLoad(vectorizer, features, load, pathVNgrams)
+    def ConvertInput(df: DataFrame, colClass: String, colText: String): DataFrame = {
+        val changetype = df.select(colClass).dtypes(0)._2 != DoubleType.toString
+        var data =
+            if (changetype)
+                df.withColumn(ColTrueClass, df(colClass).cast(DoubleType)).drop(colClass)
+            else if (colClass != ColTrueClass)
+                df.withColumnRenamed(colClass, ColTrueClass).drop(colClass)
+            else
+                df
+        if (colText != ColPipeInput)
+            data = data.withColumnRenamed(colText, ColPipeInput).drop(colText)
+        data
     }
 
-    private def trainModels(df: DataFrame, colLabels: String, colFeatures: String): Unit = {
-        // Train logistic regression
-        lr.setLabelCol(colLabels).setFeaturesCol(colFeatures)
-        val lrmodel = Model.FitOrLoad(lr, df, LogisticRegressionModel.load, pathLR)
-        // Train smv
-        svc.setLabelCol(colLabels).setFeaturesCol(colFeatures)
-        val scvmodel = Model.FitOrLoad(svc, df, LinearSVCModel.load, pathSVC)
-        // Train random forest
-        rf.setLabelCol(colLabels).setFeaturesCol(colFeatures)
-        val rfmodel = Model.FitOrLoad(rf, df, RandomForestClassificationModel.load, pathRF)
+    private def trainModels(data: DataFrame): Unit = {
+        Models = Array(
+            Model.FitOrLoad(rf, data, RandomForestClassificationModel.load, pathRF),
+            Model.FitOrLoad(lr, data, LogisticRegressionModel.load, pathLR),
+            Model.FitOrLoad(ann, data, MultilayerPerceptronClassificationModel.load, pathANN),
+            Model.FitOrLoad(svc, data, LinearSVCModel.load, pathSVC),
+            Model.FitOrLoad(nb, data, NaiveBayesModel.load, pathNB)
+        )
+    }
+
+    private def loadModels(): Unit = {
+        Models = Array(
+            RandomForestClassificationModel.load(pathRF),
+            LogisticRegressionModel.load(pathLR),
+            MultilayerPerceptronClassificationModel.load(pathANN),
+            LinearSVCModel.load(pathSVC),
+            NaiveBayesModel.load(pathNB)
+        )
+    }
+
+    def train(df: DataFrame, colClass: String, colText: String): Unit = {
+        // Convert input
+        val class_text = ConvertInput(df, colClass: String, colText: String)
+        // Fit pipeline
+        PipeModel = Model.FitOrLoad(pipeline, class_text, PipelineModel.load, pathPipe)
+        // Transform train data
+        val data = TransformDataFrame(class_text).select(ColTrueClass, ColVectors)
+        // Fit models
+        trainModels(data)
+    }
+
+    def printResults(modelName: String, results: DataFrame, labels: Array[LabelType]): Unit = {
+        println("\n" + modelName)
+        println(f"accuracy: ${accuracy(results)}%.2f%%")
+        labels.foreach { label =>
+            println(s"label $label")
+            val (pre, re, f1) = FScoreTuple(results, label)
+            println(f"    precision: $pre%.2f%%")
+            println(f"    recall: $re%.2f%%")
+            println(f"    F1 score: $f1%.4f")
+        }
+    }
+
+    def test(df: DataFrame, colClass: String, colText: String): Unit = {
+        // Pipeline
+        PipeModel = PipelineModel.load(pathPipe)
+        // Models
+        loadModels()
+        // Convert test data
+        val class_text = ConvertInput(df, colClass: String, colText: String)
+        // Get available labels
+        val labels = class_text.select(ColTrueClass).distinct().collect().map(_.getDouble(0)).sorted
+        // Transform test data
+        val test = TransformDataFrame(class_text).select(ColTrueClass, ColVectors)
+        // Print results
+        Models.foreach(
+            //m => m.transform(test).select("rawPrediction", ColPredClass, ColTrueClass).show(false)
+            m => printResults(m.getClass.toString, m.transform(test), labels)
+        )
     }
 
     def main(args: Array[String]): Unit = {
@@ -113,21 +195,12 @@ object Classifier {
         //    (3, "Meh, I will drop"),
         //    (4, "Susan's paper-book is bad"),
         //    (5, "Co-operation is key to success"),
-        //    (5, "Boss - a person who pay you money")
+        //    (6, "Boss - a person who pay you money")
         //)).toDF("id", "sentence")
-
         val colText = "SentimentText"
         val colClass = "Sentiment"
         val df = CSV2DF("dataset/train.csv", headers = true).select(colClass, colText)
-        //val Array(trainingData, testData) = data.randomSplit(Array(0.7, 0.3))
-        init(df, colText)
-        val data = transformDataFrame(df, colText).select(colClass, ColTransformResult)
-        data.show(false)
-        //trainModels(trainingData, colClass, colText)
-        //Models.productIterator.foreach(x)
-        //
-        ////transformDataFrame(df, "sentence")
-        //result.show(false)
-        //transformString("Hi! I heard about Spark")
+        train(df, colClass, colText)
+        test(df, colClass, colText)
     }
 }

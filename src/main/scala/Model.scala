@@ -4,15 +4,15 @@ import org.apache.spark.ml.{Estimator, Model => SparkModel}
 import org.apache.spark.sql.DataFrame
 
 object Model {
-    def Save[M <: MLWritable](model: M, p: String): Unit = {
-        model.write.overwrite().save(p)
+    def Save[M <: MLWritable](model: M, path: String): Unit = {
+        model.write.overwrite().save(path)
     }
 
     def FitOrLoad[M <: SparkModel[M] with MLWritable, F <: Estimator[M]]
-    (fitter: F, df: DataFrame, load: (String) => M, path: String): M = {
+    (fitter: F, df: DataFrame, load: String => M, path: String): M = {
         if (PathExists(path)) return load(path)
-        val vWordsModel = fitter.fit(df)
-        Save(vWordsModel, path)
-        vWordsModel
+        val model = fitter.fit(df)
+        Save(model, path)
+        model
     }
 }

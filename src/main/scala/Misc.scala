@@ -1,6 +1,6 @@
-import org.apache.spark.sql.DataFrame
-import Session.{Spark, HDFS}
+import Session.{HDFS, Spark}
 import org.apache.hadoop.fs.Path
+import org.apache.spark.sql.DataFrame
 
 object Misc {
     def CSV2DF(path: String, headers: Boolean): DataFrame = {
