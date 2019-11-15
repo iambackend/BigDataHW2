@@ -146,9 +146,10 @@ object Classifier {
         )
     }
 
-    def train(df: DataFrame, colClass: String, colText: String): Unit = {
+    def train(df: DataFrame, convert: Boolean = true,
+              colClass: String = ColTrueClass, colText: String = ColPipeInput): Unit = {
         // Convert input
-        val class_text = ConvertInput(df, colClass: String, colText: String)
+        val class_text = if (convert) ConvertInput(df, colClass: String, colText: String) else df
         // Fit pipeline
         PipeModel = Model.FitOrLoad(pipeline, class_text, PipelineModel.load, pathPipe)
         // Transform train data
@@ -158,7 +159,7 @@ object Classifier {
     }
 
     def printResults(modelName: String, results: DataFrame, labels: Array[LabelType]): Unit = {
-        println("\n" + modelName)
+        println("\n" + modelName.slice("class org.apache.spark.ml.classification.".length, modelName.length))
         println(f"accuracy: ${accuracy(results)}%.2f%%")
         labels.foreach { label =>
             println(s"label $label")
@@ -169,13 +170,14 @@ object Classifier {
         }
     }
 
-    def test(df: DataFrame, colClass: String, colText: String): Unit = {
+    def test(df: DataFrame, convert: Boolean = true,
+             colClass: String = ColTrueClass, colText: String = ColPipeInput): Unit = {
         // Pipeline
         PipeModel = PipelineModel.load(pathPipe)
         // Models
         loadModels()
         // Convert test data
-        val class_text = ConvertInput(df, colClass: String, colText: String)
+        val class_text = if (convert) ConvertInput(df, colClass: String, colText: String) else df
         // Get available labels
         val labels = class_text.select(ColTrueClass).distinct().collect().map(_.getDouble(0)).sorted
         // Transform test data
@@ -200,7 +202,11 @@ object Classifier {
         val colText = "SentimentText"
         val colClass = "Sentiment"
         val df = CSV2DF("dataset/train.csv", headers = true).select(colClass, colText)
-        train(df, colClass, colText)
-        test(df, colClass, colText)
+        val class_text = ConvertInput(df, colClass, colText)
+        println(s"Number of samples with label 0: ${class_text.where(s"$ColTrueClass == 0").count()}")
+        println(s"Number of samples with label 1: ${class_text.where(s"$ColTrueClass == 1").count()}")
+
+        train(class_text, convert = false)
+        test(class_text, convert = false)
     }
 }
