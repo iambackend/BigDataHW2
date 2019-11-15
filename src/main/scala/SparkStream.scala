@@ -19,11 +19,11 @@ object SparkStream {
           .option("port", "8989")
           .load()
 
-        val wordsDF = df.select(explode(split(df("value"),"[ !?,.:]")).alias("word"))
-        val words = wordsDF.select(lower(wordsDF("word")))
+        val wordsDF = df.select(explode(split(df("value"),"[ !?,.\"]")).alias("word"))
+        val words = wordsDF.groupBy(lower(wordsDF("word"))).count()
         val query = words.writeStream
           .format("console")
-          .outputMode("append")
+          .outputMode("complete")
           .option("truncate", "false")
           .start()
           .awaitTermination()
