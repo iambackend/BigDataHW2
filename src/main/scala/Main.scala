@@ -1,11 +1,14 @@
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.{current_timestamp, date_format}
 import org.apache.spark.sql.streaming.OutputMode
 
 object Main {
     private val Host = "10.90.138.32"
     private val Port = 8989
 
-    val StreamColumn = "sentences"
+    val StreamColText = "sentences"
+    val StreamColDateTime = "datetime"
+    val OutputDir = "output/"
 
     def main(args: Array[String]): Unit = {
         //region Parse input
@@ -31,16 +34,17 @@ object Main {
         //region Initialization
         import Session.Spark
         import Spark.implicits._
-        Classifier.init()
+        Classifier.Init()
         //endregion
+        //region Start stream
 
-        // Start stream
         val data = Spark.readStream
           .format("socket")
           .option("host", Host)
           .option("port", Port)
           .load()
-        val query = data.as[String].toDF(StreamColumn)
+        val query = data.as[String].toDF(StreamColText)
+          .withColumn(StreamColDateTime, date_format(current_timestamp(), "yyyy-MM-dd HH:mm:ss"))
           .writeStream
           .foreachBatch {
               (batchDF: DataFrame, batchId: Long) =>
@@ -52,5 +56,9 @@ object Main {
           .outputMode(OutputMode.Append())
           .start()
         query.awaitTermination(timeout)
+        //endregion
+        //region Merge output files
+        Classifier.PostProcessStream()
+        //endregion
     }
 }

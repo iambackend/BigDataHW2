@@ -1,11 +1,10 @@
-import Main.StreamColumn
-import Misc.CSV2DF
+import Misc._
 import Scores.{FScoreTuple, LabelType, accuracy}
 import org.apache.spark.ml.classification._
 import org.apache.spark.ml.feature._
-import org.apache.spark.ml.{Pipeline, PipelineModel, Transformer}
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.sql.types.DoubleType
+import org.apache.spark.sql.{DataFrame, SaveMode}
 
 
 object Classifier {
@@ -87,7 +86,7 @@ object Classifier {
       .setLabelCol(ColTrueClass)
       .setFeaturesCol(ColVectors)
       .setPredictionCol(ColPredClass)
-    private var Models: Array[Transformer] = _
+    private var Models: Array[Model] = _
     private var Labels: Array[LabelType] = _
     //endregion
     //region Paths
@@ -101,9 +100,7 @@ object Classifier {
     private val pathNB = modelFolder + "NB"
     //endregion
 
-    private def TransformDataFrame(df: DataFrame): DataFrame = {
-        PipeModel.transform(df)
-    }
+    private def TransformDataFrame(df: DataFrame): DataFrame = PipeModel.transform(df)
 
     private def ConvertInput(df: DataFrame, colText: String, colClass: String = null): DataFrame = {
         var data = df
@@ -121,21 +118,21 @@ object Classifier {
 
     private def trainModels(data: DataFrame): Unit = {
         Models = Array(
-            Model.FitOrLoad(rf, data, RandomForestClassificationModel.load, pathRF),
-            Model.FitOrLoad(lr, data, LogisticRegressionModel.load, pathLR),
-            Model.FitOrLoad(ann, data, MultilayerPerceptronClassificationModel.load, pathANN)
-            //Model.FitOrLoad(svc, data, LinearSVCModel.load, pathSVC),
-            //Model.FitOrLoad(nb, data, NaiveBayesModel.load, pathNB)
+            Model.FitOrLoadModel(rf, data, RandomForestClassificationModel.load, pathRF),
+            Model.FitOrLoadModel(lr, data, LogisticRegressionModel.load, pathLR),
+            Model.FitOrLoadModel(ann, data, MultilayerPerceptronClassificationModel.load, pathANN)
+            //Model.FitOrLoadModel(svc, data, LinearSVCModel.load, pathSVC),
+            //Model.FitOrLoadModel(nb, data, NaiveBayesModel.load, pathNB)
         )
     }
 
     private def loadModels(): Unit = {
         Models = Array(
-            RandomForestClassificationModel.load(pathRF),
-            LogisticRegressionModel.load(pathLR),
-            MultilayerPerceptronClassificationModel.load(pathANN)
-            //LinearSVCModel.load(pathSVC),
-            //NaiveBayesModel.load(pathNB)
+            Model(RandomForestClassificationModel.load(pathRF)),
+            Model(LogisticRegressionModel.load(pathLR)),
+            Model(MultilayerPerceptronClassificationModel.load(pathANN))
+            //Model(LinearSVCModel.load(pathSVC)),
+            //Model(NaiveBayesModel.load(pathNB))
         )
     }
 
@@ -170,7 +167,7 @@ object Classifier {
         )
     }
 
-    def init(): Unit = {
+    def Init(): Unit = {
         // Get train data
         val colText = "SentimentText"
         val colClass = "Sentiment"
@@ -191,13 +188,20 @@ object Classifier {
     }
 
     def ProcessStream(batchDF: DataFrame): Unit = {
-        val data = TransformDataFrame(ConvertInput(batchDF, StreamColumn)).select(ColPipeInput, ColVectors)
+        val data = TransformDataFrame(ConvertInput(batchDF, Main.StreamColText))
+          .select(Main.StreamColDateTime, ColPipeInput, ColVectors)
         Models.foreach { m =>
             // Get predictions
-            val result = m.transform(data).select(ColPipeInput, ColPredClass)
-            // Write file time, sentence, predicted class
-            println(m.getClass.getSimpleName)
-            result.show(false)
+            val result = m.transform(data).select(Main.StreamColDateTime, ColPipeInput, ColPredClass)
+            // Write time, sentence, predicted class
+            DF2CSV(result, m.outdir, mode = SaveMode.Append)
+        }
+    }
+
+    def PostProcessStream(): Unit = {
+        Models.foreach { m =>
+            if (PathExists(m.outcsvPath)) Remove(m.outcsvPath)
+            MergeFiles(m.outdirPath, m.outcsvPath)
         }
     }
 
