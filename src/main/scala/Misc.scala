@@ -20,7 +20,20 @@ object Misc {
           .csv(path)
     }
 
+    def PathExists(path: Path): Boolean = HDFS.exists(path)
+
+    def PathExists(path: String): Boolean = PathExists(new Path(path))
+
+    def HasFiles(path: Path): Boolean = HDFS.getContentSummary(path).getFileCount > 0
+
+    def HasFiles(path: String): Boolean = HasFiles(new Path(path))
+
+    def Remove(path: Path): Unit = HDFS.delete(path, true)
+
+    def Remove(path: String): Unit = if (PathExists(path)) Remove(new Path(path))
+
     def MergeFiles(pathin: Path, pathout: Path): Unit = {
+        Remove(pathout)
         FileUtil.copyMerge(HDFS, pathin, HDFS, pathout, false, HDFS.getConf, null)
     }
 
@@ -29,12 +42,4 @@ object Misc {
     def MergeFiles(pathin: Path, pathout: String): Unit = MergeFiles(pathin, new Path(pathout))
 
     def MergeFiles(pathin: String, pathout: Path): Unit = MergeFiles(new Path(pathin), pathout)
-
-    def PathExists(path: Path): Boolean = HDFS.exists(path)
-
-    def PathExists(path: String): Boolean = PathExists(new Path(path))
-
-    def Remove(path: Path): Unit = HDFS.delete(path, true)
-
-    def Remove(path: String): Unit = Remove(new Path(path))
 }

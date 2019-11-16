@@ -200,7 +200,6 @@ object Classifier {
 
     def PostProcessStream(): Unit = {
         Models.foreach { m =>
-            if (PathExists(m.outcsvPath)) Remove(m.outcsvPath)
             MergeFiles(m.outdirPath, m.outcsvPath)
         }
     }

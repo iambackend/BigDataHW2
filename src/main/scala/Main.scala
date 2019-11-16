@@ -1,6 +1,6 @@
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{current_timestamp, date_format}
-import org.apache.spark.sql.streaming.OutputMode
+import org.apache.spark.sql.streaming.{OutputMode, StreamingQuery}
 
 object Main {
     private val Host = "10.90.138.32"
@@ -9,6 +9,9 @@ object Main {
     val StreamColText = "sentences"
     val StreamColDateTime = "datetime"
     val OutputDir = "output/"
+
+    private var Query: StreamingQuery = _
+    private var InputThread: Thread = _
 
     def main(args: Array[String]): Unit = {
         //region Parse input
@@ -35,6 +38,20 @@ object Main {
         import Session.Spark
         import Spark.implicits._
         Classifier.Init()
+        WordCounter.Init()
+        InputThread = new Thread {
+            override def run() {
+                while (true) {
+                    print("Type 'stop' to stop stream: ")
+                    val line = scala.io.StdIn.readLine().trim.toLowerCase
+                    if (line == "stop") {
+                        Query.stop()
+                        return
+                    }
+                }
+            }
+        }
+        InputThread.setDaemon(true)
         //endregion
         //region Start stream
 
@@ -43,21 +60,27 @@ object Main {
           .option("host", Host)
           .option("port", Port)
           .load()
-        val query = data.as[String].toDF(StreamColText)
+        Query = data.as[String].toDF(StreamColText)
           .withColumn(StreamColDateTime, date_format(current_timestamp(), "yyyy-MM-dd HH:mm:ss"))
           .writeStream
           .foreachBatch {
               (batchDF: DataFrame, batchId: Long) =>
                   if (batchId > 0) {
-                      batchDF.show(false)
+                      WordCounter.ProcessStream(batchDF)
                       Classifier.ProcessStream(batchDF)
                   }
           }
           .outputMode(OutputMode.Append())
           .start()
-        query.awaitTermination(timeout)
+        //endregion
+        //region Start input thread and await query termination
+
+        InputThread.start()
+        Query.awaitTermination(timeout)
+        Query.stop()
         //endregion
         //region Merge output files
+        WordCounter.PostProcessStream()
         Classifier.PostProcessStream()
         //endregion
     }
