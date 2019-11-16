@@ -1,11 +1,10 @@
-import Misc.CSV2DF
+import Misc._
 import Scores.{FScoreTuple, LabelType, accuracy}
-import Session.Spark
 import org.apache.spark.ml.classification._
 import org.apache.spark.ml.feature._
-import org.apache.spark.ml.{Pipeline, PipelineModel, Transformer}
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.sql.types.DoubleType
+import org.apache.spark.sql.{DataFrame, SaveMode}
 
 
 object Classifier {
@@ -19,7 +18,6 @@ object Classifier {
     private val ColVNGrams = "vngrams"
     private val ColVNormFiltered = "vnormfiltered"
     private val ColVNormNGrams = "vnormngrams"
-
     val ColVectors = "vectors" // do not change!
     val ColTrueClass = "label" // do not change!
     val ColPredClass = "prediction" // do not change!
@@ -88,7 +86,8 @@ object Classifier {
       .setLabelCol(ColTrueClass)
       .setFeaturesCol(ColVectors)
       .setPredictionCol(ColPredClass)
-    private var Models: Array[Transformer] = _
+    private var Models: Array[Model] = _
+    private var Labels: Array[LabelType] = _
     //endregion
     //region Paths
 
@@ -101,26 +100,17 @@ object Classifier {
     private val pathNB = modelFolder + "NB"
     //endregion
 
-    def TransformDataFrame(df: DataFrame): DataFrame = {
-        PipeModel.transform(df)
-    }
+    private def TransformDataFrame(df: DataFrame): DataFrame = PipeModel.transform(df)
 
-    def TransformString(twit: String): DataFrame = {
-        val df = Spark.createDataFrame(Seq(
-            Tuple1(twit)
-        )).toDF(ColPipeInput)
-        TransformDataFrame(df).select(ColVectors)
-    }
-
-    def ConvertInput(df: DataFrame, colClass: String, colText: String): DataFrame = {
-        val changetype = df.select(colClass).dtypes(0)._2 != DoubleType.toString
-        var data =
+    private def ConvertInput(df: DataFrame, colText: String, colClass: String = null): DataFrame = {
+        var data = df
+        if (colClass != null) {
+            val changetype = df.select(colClass).dtypes(0)._2 != DoubleType.toString
             if (changetype)
-                df.withColumn(ColTrueClass, df(colClass).cast(DoubleType)).drop(colClass)
+                data = df.withColumn(ColTrueClass, df(colClass).cast(DoubleType)).drop(colClass)
             else if (colClass != ColTrueClass)
-                df.withColumnRenamed(colClass, ColTrueClass).drop(colClass)
-            else
-                df
+                data = df.withColumnRenamed(colClass, ColTrueClass).drop(colClass)
+        }
         if (colText != ColPipeInput)
             data = data.withColumnRenamed(colText, ColPipeInput).drop(colText)
         data
@@ -128,40 +118,28 @@ object Classifier {
 
     private def trainModels(data: DataFrame): Unit = {
         Models = Array(
-            Model.FitOrLoad(rf, data, RandomForestClassificationModel.load, pathRF),
-            Model.FitOrLoad(lr, data, LogisticRegressionModel.load, pathLR),
-            Model.FitOrLoad(ann, data, MultilayerPerceptronClassificationModel.load, pathANN),
-            Model.FitOrLoad(svc, data, LinearSVCModel.load, pathSVC),
-            Model.FitOrLoad(nb, data, NaiveBayesModel.load, pathNB)
+            Model.FitOrLoadModel(rf, data, RandomForestClassificationModel.load, pathRF),
+            Model.FitOrLoadModel(lr, data, LogisticRegressionModel.load, pathLR),
+            Model.FitOrLoadModel(ann, data, MultilayerPerceptronClassificationModel.load, pathANN)
+            //Model.FitOrLoadModel(svc, data, LinearSVCModel.load, pathSVC),
+            //Model.FitOrLoadModel(nb, data, NaiveBayesModel.load, pathNB)
         )
     }
 
     private def loadModels(): Unit = {
         Models = Array(
-            RandomForestClassificationModel.load(pathRF),
-            LogisticRegressionModel.load(pathLR),
-            MultilayerPerceptronClassificationModel.load(pathANN),
-            LinearSVCModel.load(pathSVC),
-            NaiveBayesModel.load(pathNB)
+            Model(RandomForestClassificationModel.load(pathRF)),
+            Model(LogisticRegressionModel.load(pathLR)),
+            Model(MultilayerPerceptronClassificationModel.load(pathANN))
+            //Model(LinearSVCModel.load(pathSVC)),
+            //Model(NaiveBayesModel.load(pathNB))
         )
     }
 
-    def train(df: DataFrame, convert: Boolean = true,
-              colClass: String = ColTrueClass, colText: String = ColPipeInput): Unit = {
-        // Convert input
-        val class_text = if (convert) ConvertInput(df, colClass: String, colText: String) else df
-        // Fit pipeline
-        PipeModel = Model.FitOrLoad(pipeline, class_text, PipelineModel.load, pathPipe)
-        // Transform train data
-        val data = TransformDataFrame(class_text).select(ColTrueClass, ColVectors)
-        // Fit models
-        trainModels(data)
-    }
-
-    def printResults(modelName: String, results: DataFrame, labels: Array[LabelType]): Unit = {
+    private def printResults(modelName: String, results: DataFrame): Unit = {
         println("\n" + modelName)
         println(f"accuracy: ${accuracy(results)}%.2f%%")
-        labels.foreach { label =>
+        Labels.foreach { label =>
             println(s"label $label")
             val (pre, re, f1) = FScoreTuple(results, label)
             println(f"    precision: $pre%.2f%%")
@@ -170,8 +148,8 @@ object Classifier {
         }
     }
 
-    def test(df: DataFrame, convert: Boolean = true,
-             colClass: String = ColTrueClass, colText: String = ColPipeInput): Unit = {
+    private def test(df: DataFrame, convert: Boolean = true,
+                     colClass: String = ColTrueClass, colText: String = ColPipeInput): Unit = {
         // Pipeline
         PipeModel = PipelineModel.load(pathPipe)
         // Models
@@ -179,34 +157,53 @@ object Classifier {
         // Convert test data
         val class_text = if (convert) ConvertInput(df, colClass: String, colText: String) else df
         // Get available labels
-        val labels = class_text.select(ColTrueClass).distinct().collect().map(_.getDouble(0)).sorted
+        Labels = class_text.select(ColTrueClass).distinct().collect().map(_.getDouble(0)).sorted
         // Transform test data
         val test = TransformDataFrame(class_text).select(ColTrueClass, ColVectors)
         // Print results
         Models.foreach(
             //m => m.transform(test).select("rawPrediction", ColPredClass, ColTrueClass).show(false)
-            m => printResults(m.getClass.getSimpleName, m.transform(test), labels)
+            m => printResults(m.getClass.getSimpleName, m.transform(test))
         )
     }
 
-    def main(args: Array[String]): Unit = {
-        //val df = Spark.createDataFrame(Seq(
-        //    (0, "Hi! I heard about Spark"),
-        //    (1, "I wish Java could use case classes"),
-        //    (2, "Logistic regression models are neat"),
-        //    (3, "Meh, I will drop"),
-        //    (4, "Susan's paper-book is bad"),
-        //    (5, "Co-operation is key to success"),
-        //    (6, "Boss - a person who pay you money")
-        //)).toDF("id", "sentence")
+    def Init(): Unit = {
+        // Get train data
         val colText = "SentimentText"
         val colClass = "Sentiment"
-        val df = CSV2DF("dataset/train.csv", headers = true).select(colClass, colText)
-        val class_text = ConvertInput(df, colClass, colText)
-        println(s"Number of samples with label 0: ${class_text.where(s"$ColTrueClass == 0").count()}")
-        println(s"Number of samples with label 1: ${class_text.where(s"$ColTrueClass == 1").count()}")
-
-        train(class_text, convert = false)
-        test(class_text, convert = false)
+        var train = CSV2DF("dataset/train.csv", headers = true).select(colClass, colText)
+        train = ConvertInput(train, colText, colClass)
+        // Get labels
+        Labels = train.select(ColTrueClass).distinct().collect().map(_.getDouble(0)).sorted
+        // Print available labels
+        Labels.foreach { l =>
+            s"Label $l, ${train.where(s"$ColTrueClass == $l").count()} sample(s)"
+        }
+        // Fit pipeline
+        PipeModel = Model.FitOrLoad(pipeline, train, PipelineModel.load, pathPipe)
+        // Transform train data
+        val data = TransformDataFrame(train).select(ColTrueClass, ColVectors)
+        // Fit models
+        trainModels(data)
     }
+
+    def ProcessStream(batchDF: DataFrame): Unit = {
+        val data = TransformDataFrame(ConvertInput(batchDF, Main.StreamColText))
+          .select(Main.StreamColDateTime, ColPipeInput, ColVectors)
+        Models.foreach { m =>
+            // Get predictions
+            val result = m.transform(data).select(Main.StreamColDateTime, ColPipeInput, ColPredClass)
+            // Write time, sentence, predicted class
+            DF2CSV(result, m.outdir, mode = SaveMode.Append)
+        }
+    }
+
+    def PostProcessStream(): Unit = {
+        Models.foreach { m =>
+            if (PathExists(m.outcsvPath)) Remove(m.outcsvPath)
+            MergeFiles(m.outdirPath, m.outcsvPath)
+        }
+    }
+
+    //def main(args: Array[String]): Unit = {}
 }
