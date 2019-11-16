@@ -5,7 +5,7 @@ import org.apache.spark.ml.{Estimator, Transformer, Model => SparkModel}
 import org.apache.spark.sql.DataFrame
 
 object Model {
-    private val OutputDir = Main.OutputDir
+    private val OutputDir = Stream.OutputDir
 
     def Save[M <: MLWritable](model: M, path: String): Unit = {
         model.write.overwrite().save(path)

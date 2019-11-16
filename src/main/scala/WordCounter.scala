@@ -6,8 +6,8 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.IntegerType
 
 object WordCounter {
-    private val OutputDir = Main.OutputDir + "WordCounter"
-    private val TempDir = Main.OutputDir + "temp"
+    private val OutputDir = Stream.OutputDir + "WordCounter"
+    private val TempDir = Stream.OutputDir + "temp"
     private val OutputCSV = OutputDir + ".csv"
     private val Separator = "\t"
 
@@ -17,7 +17,7 @@ object WordCounter {
     private val ColCount = "count"
 
     private val tokenizer = new RegexTokenizer()
-      .setInputCol(Main.StreamColText)
+      .setInputCol(Stream.BatchDFColText)
       .setOutputCol(ColTokenizer)
       .setPattern("\\w+(-\\w+)?")
       .setGaps(false)

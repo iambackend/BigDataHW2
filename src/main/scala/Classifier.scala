@@ -188,11 +188,11 @@ object Classifier {
     }
 
     def ProcessStream(batchDF: DataFrame): Unit = {
-        val data = TransformDataFrame(ConvertInput(batchDF, Main.StreamColText))
-          .select(Main.StreamColDateTime, ColPipeInput, ColVectors)
+        val data = TransformDataFrame(ConvertInput(batchDF, Stream.BatchDFColText))
+          .select(Stream.BachDFColDateTime, ColPipeInput, ColVectors)
         Models.foreach { m =>
             // Get predictions
-            val result = m.transform(data).select(Main.StreamColDateTime, ColPipeInput, ColPredClass)
+            val result = m.transform(data).select(Stream.BachDFColDateTime, ColPipeInput, ColPredClass)
             // Write time, sentence, predicted class
             DF2CSV(result, m.outdir, mode = SaveMode.Append)
         }
