@@ -14,7 +14,7 @@ case object Session {
     // Init session
     val Spark: SparkSession = SparkSession.builder()
       .appName("Sentiment Classifier")
-      .master("local")
+      .master("local[3]")
       .getOrCreate()
     // Get HDFS
     val HDFS: FileSystem = FileSystem.get(Spark.sparkContext.hadoopConfiguration)
