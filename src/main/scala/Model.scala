@@ -1,4 +1,4 @@
-import Misc.PathExists
+import FileSystem.PathExists
 import org.apache.hadoop.fs.Path
 import org.apache.spark.ml.util.MLWritable
 import org.apache.spark.ml.{Estimator, Transformer, Model => SparkModel}

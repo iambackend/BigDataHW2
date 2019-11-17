@@ -1,4 +1,7 @@
-import Misc.Remove
+import FileSystem.{CreateFile, DF2CSV, Remove}
+import Session.Spark
+import Session.Spark.implicits._
+import org.apache.commons.lang.exception.ExceptionUtils.getStackTrace
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{current_timestamp, date_format}
 import org.apache.spark.sql.streaming.{OutputMode, StreamingQuery}
@@ -11,15 +14,33 @@ object Stream {
     val BachDFColDateTime = "datetime"
     val OutputDir = "output/"
 
-    val CheckPointDir = "tmp"
+    private val CheckPointDir = "tmp"
+    private val ErrorDir = "errors/"
+    private var ErrorCounter = 0
+
     private val QueryName = "twitter"
     private var Query: StreamingQuery = _
     private var InputThread: Thread = _
 
+    private def BatchReceived(batchDF: DataFrame, batchId: Long) {
+        if (batchDF.count() > 0) {
+            try {
+                WordCounter.ProcessStream(batchDF)
+                Classifier.ProcessStream(batchDF)
+            } catch {
+                case e: Exception =>
+                    val path = ErrorDir + ErrorCounter.toString + "/"
+                    CreateFile(path + "trace.txt", getStackTrace(e))
+                    DF2CSV(batchDF, path + "twit")
+                    ErrorCounter += 1
+            }
+        }
+    }
+
     def start(timeout: Long): Unit = {
         //region Initialization
-        import Session.Spark
-        import Spark.implicits._
+        Remove(CheckPointDir)
+        Remove(ErrorDir)
         Classifier.Init()
         WordCounter.Init()
         InputThread = new Thread {
@@ -43,23 +64,10 @@ object Stream {
           .option("host", Host)
           .option("port", Port)
           .load()
-        Remove(CheckPointDir)
         Query = data.as[String].toDF(BatchDFColText)
           .withColumn(BachDFColDateTime, date_format(current_timestamp(), "yyyy-MM-dd HH:mm:ss"))
           .writeStream
-          .foreachBatch {
-              (batchDF: DataFrame, batchId: Long) =>
-                  if (batchDF.count() > 0) {
-                      try {
-                          WordCounter.ProcessStream(batchDF)
-                          Classifier.ProcessStream(batchDF)
-                      } catch {
-                          case e: Exception =>
-                              batchDF.show(false)
-                              e.printStackTrace()
-                      }
-                  }
-          }
+          .foreachBatch(BatchReceived _)
           .outputMode(OutputMode.Append())
           .queryName(QueryName)
           .option("checkpointLocation", CheckPointDir)

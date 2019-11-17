@@ -1,8 +1,10 @@
-import Session.{HDFS, Spark}
-import org.apache.hadoop.fs.{FileUtil, Path}
+import Session.Spark
+import org.apache.hadoop.fs.{FileUtil, Path, FileSystem => FS}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
-object Misc {
+object FileSystem {
+    private val HDFS: FS = FS.get(Spark.sparkContext.hadoopConfiguration)
+
     def CSV2DF(path: String, headers: Boolean = false, sep: String = ","): DataFrame = {
         Spark.read
           .option("header", headers)
@@ -27,6 +29,18 @@ object Misc {
     def HasFiles(path: Path): Boolean = HDFS.getContentSummary(path).getFileCount > 0
 
     def HasFiles(path: String): Boolean = HasFiles(new Path(path))
+
+    def CreateDirs(path: Path): Unit = HDFS.mkdirs(path)
+
+    def CreateDirs(path: String): Unit = HDFS.mkdirs(new Path(path))
+
+    def CreateFile(path: Path, content: String): Unit = {
+        val out = HDFS.create(path, true)
+        out.writeUTF(content)
+        out.close()
+    }
+
+    def CreateFile(path: String, content: String): Unit = CreateFile(new Path(path), content)
 
     def Remove(path: Path): Unit = HDFS.delete(path, true)
 
