@@ -36,8 +36,14 @@ object FileSystem {
 
     def CreateFile(path: Path, content: String): Unit = {
         val out = HDFS.create(path, true)
-        out.writeUTF(content)
+        out.writeBytes(content)
         out.close()
+    }
+
+    def DF2CSVFile(df: DataFrame, path: String, headers: Boolean = false, sep: String = ","): Unit = {
+        var text = df.collect().map(a => a.mkString(sep)).mkString("\n") + "\n"
+        if (headers) text = df.columns.mkString(sep) + "\n" + text
+        CreateFile(path, text)
     }
 
     def CreateFile(path: String, content: String): Unit = CreateFile(new Path(path), content)

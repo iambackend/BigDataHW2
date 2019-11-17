@@ -6,9 +6,8 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.IntegerType
 
 object WordCounter {
-    private val OutputDir = Stream.OutputDir + "WordCounter"
-    private val TempDir = Stream.OutputDir + "temp"
-    private val OutputCSV = OutputDir + ".csv"
+    private val OldResult = Stream.OutputDir + "WordCounterOld.csv"
+    private val OutputCSV = Stream.OutputDir + "WordCounter.csv"
     private val Separator = "\t"
 
     private val ColTokenizer = "words"
@@ -31,23 +30,23 @@ object WordCounter {
         filter.transform(tokenizer.transform(df)).select(ColFilter)
     }
 
-    private def Load(path: String = OutputDir): DataFrame = {
+    private def Load(path: String = OutputCSV): DataFrame = {
         CSV2DF(path, headers = true, sep = Separator)
     }
 
-    private def Save(df: DataFrame = wordcount, path: String = OutputDir): Unit = {
-        DF2CSV(df, path, headers = true, sep = Separator)
+    private def Save(df: DataFrame = wordcount, path: String = OutputCSV): Unit = {
+        DF2CSVFile(df, path, headers = true, sep = Separator)
     }
 
     def Init(): Unit = {
-        if (PathExists(OutputDir) && HasFiles(OutputDir)) {
+        if (PathExists(OutputCSV)) {
             val temp = Load()
             if (temp.count() > 0) {
                 // Save old data to temporary dir and load from there
                 // Otherwise function Save will overwrite (i. e. delete) using files
                 // and an error will be thrown
-                Save(temp, TempDir)
-                wordcount = Load(TempDir)
+                Save(temp, OldResult)
+                wordcount = Load(OldResult)
                 wordcount = wordcount.withColumn(ColCount, wordcount(ColCount).cast(IntegerType))
             }
         }
@@ -55,7 +54,7 @@ object WordCounter {
 
     def ProcessStream(batchDF: DataFrame): Unit = {
         val words = GetWords(batchDF)
-          .flatMap(r => r.getSeq[String](0))
+          .flatMap(r => r.getSeq[String](0).distinct)
           .withColumnRenamed("value", ColWord)
           .withColumn(ColCount, typedLit[Int](1))
         wordcount = wordcount
@@ -63,12 +62,10 @@ object WordCounter {
           .groupBy(ColWord)
           .agg(sum(ColCount).as(ColCount))
           .orderBy(desc(ColCount))
-          .coalesce(1)
         Save()
     }
 
     def PostProcessStream(): Unit = {
-        MergeFiles(OutputDir, OutputCSV)
-        Remove(TempDir)
+        Remove(OldResult)
     }
 }

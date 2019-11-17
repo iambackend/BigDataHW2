@@ -1,4 +1,4 @@
-import FileSystem.{CreateFile, DF2CSV, Remove}
+import FileSystem.{CreateFile, DF2CSVFile, Remove}
 import Session.Spark
 import Session.Spark.implicits._
 import org.apache.commons.lang.exception.ExceptionUtils.getStackTrace
@@ -29,9 +29,9 @@ object Stream {
                 Classifier.ProcessStream(batchDF)
             } catch {
                 case e: Exception =>
-                    val path = ErrorDir + ErrorCounter.toString + "/"
+                    val path = ErrorDir + s"err$ErrorCounter/"
                     CreateFile(path + "trace.txt", getStackTrace(e))
-                    DF2CSV(batchDF, path + "twit")
+                    DF2CSVFile(batchDF, path + "twits.csv")
                     ErrorCounter += 1
             }
         }
@@ -65,6 +65,8 @@ object Stream {
           .option("port", Port)
           .load()
         Query = data.as[String].toDF(BatchDFColText)
+          //.map(r => r.getString(0).trim.replaceFirst(".*@\\w+ ", ""))
+          //.withColumnRenamed("value", BatchDFColText)
           .withColumn(BachDFColDateTime, date_format(current_timestamp(), "yyyy-MM-dd HH:mm:ss"))
           .writeStream
           .foreachBatch(BatchReceived _)

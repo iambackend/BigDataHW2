@@ -1,8 +1,7 @@
 object Main {
     def main(args: Array[String]): Unit = {
         if (args.length != 1) {
-            println("Usage:\nspark-submit --master yarn --deploy-mode cluster " +
-              "--class Main <jar name>.jar <timeout in minutes>")
+            println("Usage:\nspark-submit --master yarn --class Main <jar name>.jar <timeout in minutes>")
             return
         }
         var timeout: Long = 0
