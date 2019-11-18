@@ -30,7 +30,7 @@ object Stream {
                 case e: Exception =>
                     val path = ErrorDir + s"err$ErrorCounter/"
                     CreateFile(path + "trace.txt", getStackTrace(e))
-                    DF2CSVFile(batchDF, path + "twits.csv")
+                    DF2CSVFile(batchDF, path + "tweets.csv")
                     ErrorCounter += 1
             }
         }
