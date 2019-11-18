@@ -20,7 +20,6 @@ object Stream {
 
     private val QueryName = "twitter"
     private var Query: StreamingQuery = _
-    private var InputThread: Thread = _
 
     private def BatchReceived(batchDF: DataFrame, batchId: Long) {
         if (batchDF.count() > 0) {
@@ -42,20 +41,6 @@ object Stream {
         Remove(CheckPointDir)
         Remove(ErrorDir)
         Classifier.Init()
-        WordCounter.Init()
-        InputThread = new Thread {
-            override def run() {
-                while (true) {
-                    print("Type 'stop' to stop stream: ")
-                    val line = scala.io.StdIn.readLine().trim.toLowerCase
-                    if (line == "stop") {
-                        Query.stop()
-                        return
-                    }
-                }
-            }
-        }
-        InputThread.setDaemon(true)
         //endregion
         //region Start stream
 
@@ -65,8 +50,6 @@ object Stream {
           .option("port", Port)
           .load()
         Query = data.as[String].toDF(BatchDFColText)
-          //.map(r => r.getString(0).trim.replaceFirst(".*@\\w+ ", ""))
-          //.withColumnRenamed("value", BatchDFColText)
           .withColumn(BachDFColDateTime, date_format(current_timestamp(), "yyyy-MM-dd HH:mm:ss"))
           .writeStream
           .foreachBatch(BatchReceived _)
@@ -75,10 +58,8 @@ object Stream {
           .option("checkpointLocation", CheckPointDir)
           .start()
         //endregion
-        //region Start input thread and await query termination
-
-        InputThread.start()
-        if (timeout > 0) Query.awaitTermination(timeout) else Query.awaitTermination()
+        //region Await query termination
+        Query.awaitTermination(timeout)
         Query.stop()
         //endregion
         //region Postprocessing

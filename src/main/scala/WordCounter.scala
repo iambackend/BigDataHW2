@@ -1,14 +1,15 @@
 import FileSystem._
 import Session.Spark.implicits._
 import org.apache.spark.ml.feature.{RegexTokenizer, StopWordsRemover}
-import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.{DataFrame, SaveMode}
 
 object WordCounter {
-    private val OldResult = Stream.OutputDir + "WordCounterOld.csv"
-    private val OutputCSV = Stream.OutputDir + "WordCounter.csv"
+    private val OutputDir = Stream.OutputDir + "WordCounter"
+    private val OutputCSV = OutputDir + ".csv"
     private val Separator = "\t"
+    private val SaveHeaders = true
 
     private val ColTokenizer = "words"
     private val ColFilter = "filtered"
@@ -18,38 +19,23 @@ object WordCounter {
     private val tokenizer = new RegexTokenizer()
       .setInputCol(Stream.BatchDFColText)
       .setOutputCol(ColTokenizer)
+      .setMinTokenLength(3)
       .setPattern("\\w+(-\\w+)?")
       .setGaps(false)
     private val filter = new StopWordsRemover()
       .setInputCol(ColTokenizer)
       .setOutputCol(ColFilter)
 
-    private var wordcount: DataFrame = Seq.empty[(String, Int)].toDF(ColWord, ColCount)
-
     private def GetWords(df: DataFrame): DataFrame = {
         filter.transform(tokenizer.transform(df)).select(ColFilter)
     }
 
-    private def Load(path: String = OutputCSV): DataFrame = {
-        CSV2DF(path, headers = true, sep = Separator)
+    private def Load(path: String): DataFrame = {
+        CSV2DF(path, SaveHeaders, Separator)
     }
 
-    private def Save(df: DataFrame = wordcount, path: String = OutputCSV): Unit = {
-        DF2CSVFile(df, path, headers = true, sep = Separator)
-    }
-
-    def Init(): Unit = {
-        if (PathExists(OutputCSV)) {
-            val temp = Load()
-            if (temp.count() > 0) {
-                // Save old data to temporary dir and load from there
-                // Otherwise function Save will overwrite (i. e. delete) using files
-                // and an error will be thrown
-                Save(temp, OldResult)
-                wordcount = Load(OldResult)
-                wordcount = wordcount.withColumn(ColCount, wordcount(ColCount).cast(IntegerType))
-            }
-        }
+    private def Save(df: DataFrame, path: String): Unit = {
+        DF2CSV(df, path, SaveMode.Append, SaveHeaders, Separator)
     }
 
     def ProcessStream(batchDF: DataFrame): Unit = {
@@ -57,15 +43,17 @@ object WordCounter {
           .flatMap(r => r.getSeq[String](0).distinct)
           .withColumnRenamed("value", ColWord)
           .withColumn(ColCount, typedLit[Int](1))
-        wordcount = wordcount
-          .union(words)
-          .groupBy(ColWord)
-          .agg(sum(ColCount).as(ColCount))
-          .orderBy(desc(ColCount))
-        Save()
+        Save(words, OutputDir)
     }
 
     def PostProcessStream(): Unit = {
-        Remove(OldResult)
+        var sorted = Load(OutputDir)
+        val changetype = sorted.select(ColCount).dtypes(0)._2 != IntegerType.toString
+        if (changetype) sorted = sorted.withColumn(ColCount, sorted(ColCount).cast(IntegerType))
+        sorted = sorted
+          .groupBy(ColWord)
+          .agg(sum(ColCount).as(ColCount))
+          .orderBy(desc(ColCount))
+        DF2CSVFile(sorted, OutputCSV, SaveHeaders, Separator)
     }
 }
