@@ -48,9 +48,9 @@ object FileSystem {
 
     def CreateFile(path: String, content: String): Unit = CreateFile(new Path(path), content)
 
-    def Remove(path: Path): Unit = HDFS.delete(path, true)
+    def Remove(path: Path): Unit = if (PathExists(path)) HDFS.delete(path, true)
 
-    def Remove(path: String): Unit = if (PathExists(path)) Remove(new Path(path))
+    def Remove(path: String): Unit = Remove(new Path(path))
 
     def MergeFiles(pathin: Path, pathout: Path): Unit = {
         Remove(pathout)
