@@ -1,12 +1,11 @@
 # Assignment №2. Spark.
-```
 ## Usage
 ```
 There is a .jar file provided with this report. The command to run our program using spark-submit is next:
-spark-submit --master yarn --class Main <jar name>.jar <timeout in minutes>
-<jar name> - the name of provided .jar file.
-<timeout in minutes> - how long program will collect tweets after stream reading starts in minutes. 
-When this time expires, in WordCounter and Classifier stream postprocessing starts.
+    spark-submit --master yarn --class Main <jar name>.jar <timeout in minutes>
+    <jar name> - the name of provided .jar file.
+    <timeout in minutes> - how long program will collect tweets after stream reading starts in minutes. 
+    When this time expires, in WordCounter and Classifier stream postprocessing starts.
 ```
 ## Important
 ```
