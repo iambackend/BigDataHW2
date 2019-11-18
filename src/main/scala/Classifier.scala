@@ -126,16 +126,6 @@ object Classifier {
         )
     }
 
-    private def loadModels(): Unit = {
-        Models = Array(
-            Model(RandomForestClassificationModel.load(pathRF)),
-            Model(LogisticRegressionModel.load(pathLR)),
-            Model(MultilayerPerceptronClassificationModel.load(pathANN))
-            //Model(LinearSVCModel.load(pathSVC)),
-            //Model(NaiveBayesModel.load(pathNB))
-        )
-    }
-
     private def printResults(modelName: String, results: DataFrame): Unit = {
         println("\n" + modelName)
         println(f"accuracy: ${accuracy(results)}%.2f%%")
@@ -146,25 +136,6 @@ object Classifier {
             println(f"    recall: $re%.2f%%")
             println(f"    F1 score: $f1%.4f")
         }
-    }
-
-    private def test(df: DataFrame, convert: Boolean = true,
-                     colClass: String = ColTrueClass, colText: String = ColPipeInput): Unit = {
-        // Pipeline
-        PipeModel = PipelineModel.load(pathPipe)
-        // Models
-        loadModels()
-        // Convert test data
-        val class_text = if (convert) ConvertInput(df, colClass: String, colText: String) else df
-        // Get available labels
-        Labels = class_text.select(ColTrueClass).distinct().collect().map(_.getDouble(0)).sorted
-        // Transform test data
-        val test = TransformDataFrame(class_text).select(ColTrueClass, ColVectors)
-        // Print results
-        Models.foreach(
-            //m => m.transform(test).select("rawPrediction", ColPredClass, ColTrueClass).show(false)
-            m => printResults(m.getClass.getSimpleName, m.transform(test))
-        )
     }
 
     def Init(): Unit = {
