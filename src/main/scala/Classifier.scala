@@ -107,10 +107,12 @@ object Classifier {
         if (colClass != null) {
             val changetype = df.select(colClass).dtypes(0)._2 != DoubleType.toString
             if (changetype)
-                data = df.withColumn(ColTrueClass, df(colClass).cast(DoubleType)).drop(colClass)
+                data = df.withColumn(ColTrueClass, df(colClass).cast(DoubleType))
             else if (colClass != ColTrueClass)
-                data = df.withColumnRenamed(colClass, ColTrueClass).drop(colClass)
+                data = df.withColumnRenamed(colClass, ColTrueClass)
         }
+        if (colClass != ColTrueClass)
+            data = data.drop(colClass)
         if (colText != ColPipeInput)
             data = data.withColumnRenamed(colText, ColPipeInput).drop(colText)
         data
@@ -175,5 +177,12 @@ object Classifier {
         }
     }
 
-    //def main(args: Array[String]): Unit = {}
+    def main(args: Array[String]): Unit = {
+        val names = Array("RandomForestClassificationModel", "LogisticRegressionModel", "MultilayerPerceptronClassificationModel")
+        Labels = Array(0, 1)
+        names.foreach { name =>
+            val results = ConvertInput(CSV2DF(s"classified/$name.csv", headers = true), ColPipeInput, ColTrueClass)
+            printResults(name, results)
+        }
+    }
 }
